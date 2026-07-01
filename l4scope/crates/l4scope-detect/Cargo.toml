@@ -1,0 +1,16 @@
+[package]
+name = "l4scope-detect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+l4scope-core = { path = "../l4scope-core" }
+
+[dev-dependencies]
+# For the end-to-end test that runs synthetic traffic through the engine.
+l4scope-capture = { path = "../l4scope-capture" }

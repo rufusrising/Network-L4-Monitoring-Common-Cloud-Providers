@@ -1,0 +1,21 @@
+[package]
+name = "l4scope-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "l4scope"
+path = "src/main.rs"
+
+[dependencies]
+l4scope-core = { path = "../l4scope-core" }
+l4scope-capture = { path = "../l4scope-capture" }
+l4scope-detect = { path = "../l4scope-detect" }
+l4scope-export = { path = "../l4scope-export" }
+
+[features]
+default = []
+ebpf = ["l4scope-capture/ebpf"]
+etw = ["l4scope-capture/etw"]

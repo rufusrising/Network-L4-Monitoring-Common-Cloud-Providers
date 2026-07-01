@@ -1,0 +1,79 @@
+# OpenTelemetry Collector config for L4Scope.
+# Receives OTLP from the node-local L4Scope agents, enriches with Kubernetes and
+# cloud metadata, and exports to your backend. Uncomment the exporter for your
+# provider (AKS / GKE / EKS) or keep the vendor-neutral prometheus/otlphttp path.
+#
+# Requires the *contrib* Collector image (k8sattributes, resourcedetection,
+# and the cloud exporters live there):
+#   otel/opentelemetry-collector-contrib:<version>
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # Turn L4Scope's per-datapoint k8s.pod.ip into pod/namespace/workload metadata.
+  k8sattributes:
+    auth_type: serviceAccount
+    passthrough: false
+    pod_association:
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.ip
+    extract:
+      metadata:
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.pod.uid
+        - k8s.deployment.name
+        - k8s.node.name
+  # Detect cloud/host resource attributes (region, account, instance, etc.).
+  resourcedetection:
+    detectors: [env, system, ec2, gcp, azure]   # harmless if a detector N/A
+    timeout: 5s
+    override: false
+  batch:
+    send_batch_size: 1024
+    timeout: 10s
+
+exporters:
+  # Vendor-neutral: expose a Prometheus scrape endpoint on the Collector.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+  # Vendor-neutral: forward OTLP to another gateway/backend.
+  # otlphttp:
+  #   endpoint: https://otlp.your-backend.example:4318
+  #   headers: { authorization: "Bearer ${env:OTLP_TOKEN}" }
+
+  # --- AKS → Azure Monitor ---
+  # azuremonitor:
+  #   connection_string: "${env:APPLICATIONINSIGHTS_CONNECTION_STRING}"
+
+  # --- GKE → Google Cloud Monitoring ---
+  # googlecloud:
+  #   project: "${env:GCP_PROJECT}"
+  #   metric: { prefix: "custom.googleapis.com/l4scope" }
+
+  # --- EKS → Amazon Managed Prometheus (AMP, via Prometheus Remote Write) ---
+  # prometheusremotewrite:
+  #   endpoint: "${env:AMP_REMOTE_WRITE_URL}"
+  #   auth: { authenticator: sigv4auth }
+  # --- EKS → CloudWatch EMF (alternative) ---
+  # awsemf:
+  #   namespace: L4Scope
+  #   region: "${env:AWS_REGION}"
+
+# extensions:                 # needed for AMP sigv4
+#   sigv4auth: { region: "${env:AWS_REGION}" }
+
+service:
+  # extensions: [sigv4auth]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [k8sattributes, resourcedetection, batch]
+      exporters: [prometheus]   # add your cloud exporter here

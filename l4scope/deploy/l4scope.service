@@ -1,0 +1,23 @@
+# systemd unit for a Linux host. Least-privilege: grant only capture caps.
+# Install: cp target/release/l4scope /usr/local/bin/ ; cp config/l4scope.toml /etc/l4scope/
+[Unit]
+Description=L4Scope network health agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/l4scope --config /etc/l4scope/l4scope.toml
+Restart=always
+RestartSec=2
+# Live backend needs raw capture; eBPF backend needs BPF + NET_ADMIN.
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN CAP_BPF
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_BPF
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target

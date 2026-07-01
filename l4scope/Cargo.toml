@@ -1,0 +1,29 @@
+# L4Scope — cross-platform Layer-4 network health agent.
+#
+# Zero external dependencies: the entire workspace builds on stable Rust with
+# `std` only. This guarantees `cargo build` works offline, in minimal CI images,
+# and inside hardened containers. Live-capture backends that require the OS
+# (eBPF/CO-RE, Windows ETW) are behind opt-in features so the default build is
+# always green on every platform.
+[workspace]
+resolver = "2"
+members = [
+    "crates/l4scope-core",
+    "crates/l4scope-capture",
+    "crates/l4scope-detect",
+    "crates/l4scope-export",
+    "crates/l4scope-agent",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+license = "Apache-2.0"
+authors = ["L4Scope Authors"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"

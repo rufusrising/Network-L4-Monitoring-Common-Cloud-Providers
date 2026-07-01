@@ -1,0 +1,33 @@
+[package]
+name = "l4scope-capture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+l4scope-core = { path = "../l4scope-core" }
+
+# Native eBPF backend (Linux only). Pulls the `aya` loader + `libc` for the
+# ring-buffer poll. Only compiled with `--features ebpf`; the default build stays
+# std-only and cross-platform.
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = { version = "0.13", optional = true }
+libc = { version = "0.2", optional = true }
+
+# Native Windows ETW backend uses `ferrisetw` — kept out of the dependency graph
+# until the realtime decoder is completed and compile-verified on a Windows host
+# (see docs/BUILD_NATIVE.md, "Windows"). Uncomment to work on it:
+# [target.'cfg(target_os = "windows")'.dependencies]
+# ferrisetw = { version = "1.1", optional = true }
+
+[features]
+default = []
+# Linux native eBPF/CO-RE capture.
+ebpf = ["dep:aya", "dep:libc"]
+# Windows native ETW capture (currently a stub — see docs/BUILD_NATIVE.md).
+etw = []

@@ -1,0 +1,87 @@
+# Run L4Scope on every Kubernetes node (EKS/GKE/AKS). hostNetwork so the agent
+# observes node + pod traffic; pushes OTLP to the node-local Collector on
+# localhost:4318 (see deploy/otel/collector-daemonset.yaml). Prometheus can also
+# scrape the agent directly on 9560.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: l4scope-config
+  namespace: monitoring
+data:
+  l4scope.toml: |
+    [capture]
+    backend = "ebpf"        # falls back to "live" if not built with --features ebpf
+    interface = "eth0"
+    [detect]
+    # defaults are fine; override thresholds per environment here
+    [export]
+    prometheus_addr = "0.0.0.0:9560"
+    json_events = "stdout"
+    [otlp]
+    enabled = true
+    endpoint = "http://localhost:4318"
+    path = "/v1/metrics"
+    interval_secs = 15
+    service_name = "l4scope"
+    # SET THIS to your cluster pod CIDR (GKE/EKS/AKS differ; see docs/OTEL.md)
+    pod_cidrs = "10.244.0.0/16"
+    pod_attribution = true
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: l4scope
+  namespace: monitoring
+  labels: { app: l4scope }
+spec:
+  selector:
+    matchLabels: { app: l4scope }
+  template:
+    metadata:
+      labels: { app: l4scope }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9560"
+        prometheus.io/path: "/metrics"
+    spec:
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        - operator: Exists            # run on every node, incl. control-plane
+      containers:
+        - name: l4scope
+          # Production image is built with --features ebpf (see docs/BUILD_NATIVE.md).
+          image: your-registry/l4scope:0.1.0-ebpf
+          args: ["--config", "/etc/l4scope/l4scope.toml"]
+          env:
+            # Resource attributes for OTLP (node/cluster/cloud).
+            - name: K8S_NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+            - name: K8S_CLUSTER_NAME
+              value: "REPLACE_ME"          # e.g. prod-eks-1
+            - name: CLOUD_PROVIDER
+              value: "aws"                 # aws | gcp | azure
+            - name: CLOUD_REGION
+              value: "REPLACE_ME"          # e.g. us-east-1
+          ports:
+            - { name: metrics, containerPort: 9560 }
+          securityContext:
+            capabilities:
+              add: ["NET_RAW", "NET_ADMIN", "BPF"]   # BPF only needed for the ebpf backend
+          volumeMounts:
+            - { name: config, mountPath: /etc/l4scope }
+            # CO-RE needs kernel BTF; present on most managed node images.
+            - { name: btf, mountPath: /sys/kernel/btf, readOnly: true }
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 9560 }
+            initialDelaySeconds: 3
+      volumes:
+        - name: config
+          configMap: { name: l4scope-config }
+        - name: btf
+          hostPath: { path: /sys/kernel/btf, type: Directory }

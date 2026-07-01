@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: l4scope
+
+      # Default build is std-only, so `cargo test --workspace` covers unit +
+      # integration tests on every platform (see docs/TESTING.md).
+      - name: cargo test --workspace
+        working-directory: l4scope
+        run: cargo test --workspace
+
+      # Black-box smoke tests against the release binary (demo, pcap replay,
+      # OTLP push). Native (eBPF/ETW) feature builds are informational only
+      # and are skipped here since this job doesn't install clang/BTF headers.
+      - name: run-tests.sh (build + smoke)
+        working-directory: l4scope
+        run: ./scripts/run-tests.sh
+
+  lint:
+    name: fmt & clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: l4scope
+
+      # Style is informational in this repo (see scripts/run-tests.sh), so
+      # lint failures are surfaced but don't fail the build.
+      - name: cargo fmt --check
+        working-directory: l4scope
+        run: cargo fmt --all --check
+        continue-on-error: true
+
+      - name: cargo clippy
+        working-directory: l4scope
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        continue-on-error: true
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: l4scope
+          file: l4scope/deploy/Dockerfile
+          push: false

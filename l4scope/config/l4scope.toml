@@ -1,0 +1,49 @@
+# L4Scope agent configuration (TOML subset — see l4scope-core/src/config.rs).
+# All keys are optional; unset keys fall back to built-in defaults.
+
+[capture]
+# backend: pcap_file | synthetic | live | ebpf | etw
+backend = "live"
+# Interface for live/ebpf/etw. "any" (Linux) / "en0" (macOS) / "Ethernet" (Windows).
+interface = "any"
+# BPF filter for the live backend (tcpdump/tshark syntax).
+filter = "tcp or udp"
+# Path used only by the pcap_file backend.
+pcap_path = ""
+# Override the live capture command; empty = auto-select tcpdump/tshark per OS.
+live_command = ""
+
+[detect]
+flow_ttl_secs = 120
+retransmit_ratio_warn = 0.05      # 5% of data segments retransmitted -> warn
+dup_ack_threshold = 3             # 3 dup ACKs -> fast-retransmit signal
+rst_storm_per_sec = 20.0          # host-wide RST/s -> critical
+syn_backlog_threshold = 64        # half-open conns to one service -> warn
+rtt_warn_ms = 250.0               # handshake RTT above this -> flag
+handshake_timeout_secs = 3        # unanswered SYN age -> handshake timeout
+churn_per_sec = 200.0             # new flows/s -> churn
+alert_debounce_secs = 10          # min gap between repeated host-wide alerts
+
+[export]
+# Prometheus /metrics + /healthz endpoint. Empty disables it.
+prometheus_addr = "127.0.0.1:9560"
+# Event sink: stdout | stderr | <path> | off
+json_events = "stdout"
+
+[otlp]
+# Push metrics in OpenTelemetry format to any OTel Collector (OTLP/HTTP + JSON).
+enabled = true
+# A node-local Collector over HTTP; the Collector handles TLS/auth to the cloud.
+endpoint = "http://localhost:4318"
+path = "/v1/metrics"
+interval_secs = 15
+# Extra HTTP headers, e.g. "authorization=Bearer xxx" (gateway Collector).
+headers = ""
+# Extra resource attributes, merged with env OTEL_RESOURCE_ATTRIBUTES.
+resource_attributes = "service.namespace=network,deployment.environment=prod"
+service_name = "l4scope"
+# Pod-level attribution (Kubernetes): set your node/cluster pod CIDR(s). The
+# agent tags datapoints with k8s.pod.ip; the Collector's k8sattributes processor
+# expands that into pod/namespace/workload. Leave empty on plain VMs.
+pod_cidrs = "10.244.0.0/16"
+pod_attribution = true

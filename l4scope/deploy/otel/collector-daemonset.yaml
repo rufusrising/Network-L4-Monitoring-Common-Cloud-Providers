@@ -1,0 +1,60 @@
+# Node-local OpenTelemetry Collector (contrib) for L4Scope. Runs on every node
+# with hostNetwork so the L4Scope DaemonSet reaches it at localhost:4318.
+# Mount deploy/otel/collector-config.yaml as the ConfigMap `otel-collector-config`
+# (kubectl create configmap otel-collector-config --from-file=collector.yaml=deploy/otel/collector-config.yaml -n monitoring).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: l4scope-otel, namespace: monitoring }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: l4scope-otel }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: l4scope-otel }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: l4scope-otel }
+subjects:
+  - { kind: ServiceAccount, name: l4scope-otel, namespace: monitoring }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: l4scope-otel
+  namespace: monitoring
+  labels: { app: l4scope-otel }
+spec:
+  selector: { matchLabels: { app: l4scope-otel } }
+  template:
+    metadata: { labels: { app: l4scope-otel } }
+    spec:
+      serviceAccountName: l4scope-otel
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.109.0
+          args: ["--config=/conf/collector.yaml"]
+          env:
+            - name: K8S_NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+          ports:
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: prom, containerPort: 8889 }
+          volumeMounts:
+            - { name: conf, mountPath: /conf }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "1", memory: "512Mi" }
+      volumes:
+        - name: conf
+          configMap: { name: otel-collector-config }
